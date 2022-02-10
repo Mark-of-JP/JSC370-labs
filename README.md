@@ -79,15 +79,13 @@ Once you are done setting up the project, you can now start working with the MET
 
 1.  Load the `data.table` (and the `dtplyr` and `dplyr` packages if you plan to work with those).
 
-```{r setup, message=FALSE}
-library(tidyverse)
-```
-
 
 2.  Load the met data from <https://github.com/JSC370/jsc370-2022/blob/main/labs/lab03/met_all.gz>, and also the station data. For the latter, you can use the code we used during lecture to pre-process the stations data:
 
-```{r stations-data, eval = FALSE}
+```{r stations-data, eval = T}
 library(data.table)
+
+met <- fread("met_all.gz")
 # Download the data
 stations <- fread("ftp://ftp.ncdc.noaa.gov/pub/data/noaa/isd-history.csv")
 stations[, USAF := as.integer(USAF)]
@@ -106,6 +104,9 @@ stations <- stations[n == 1,][, n := NULL]
 
 3.  Merge the data as we did during the lecture.
 
+```{r}
+met <- merge(x = met, y = stations, all.x = T, all.y = F, by.x="USAFID", by.y = "USAF")
+```
 
 
 ## Question 1: Representative station for the US
@@ -113,6 +114,14 @@ stations <- stations[n == 1,][, n := NULL]
 Across all weather stations, what is the median station in terms of temperature, wind speed, and atmospheric pressure? Look for the three weather stations that best represent continental US using the `quantile()` function. Do these three coincide?
 
 ```{r}
+station_avg <- met[, .(temp = mean(temp, na.rm = T),
+                       wind.sp = mean(wind.sp, na.rm = T),
+                       atm.press = mean(atm.press, na.rm = T)),
+                   by = .(USAFID, STATE)]
+
+medians <- station_avg[, .(temp_50 = quantile(temp, probs = .5, na.rm = T),
+                           wind.sp_50 = quantile(wind.sp, probs = .5, na.rm=T),
+                           atm.press_50 = quantile(atm.press, probs = .5, na.rm = T))]
 ```
 
 Knit the document, commit your changes, and save it on GitHub. Don't forget to add `README.md` to the tree, the first time you render it.
@@ -122,6 +131,18 @@ Knit the document, commit your changes, and save it on GitHub. Don't forget to a
 Just like the previous question, you are asked to identify what is the most representative, the median, station per state. This time, instead of looking at one variable at a time, look at the euclidean distance. If multiple stations show in the median, select the one located at the lowest latitude.
 
 ```{r}
+# median temp station
+station_avg[, temp_dist := abs(temp - medians$temp_50)]
+median_temp_station <- station_avg[order(temp_dist)][1]
+
+# median wind speed station
+station_avg[, wind_dist := abs(wind.sp - medians$wind.sp_50)]
+median_wind_station <- station_avg[order(wind_dist)][1]
+
+# median atm press station
+station_avg[, atm_dist := abs(atm.press - medians$atm.press_50)]
+median_atm_station <- station_avg[order(atm_dist)][1]
+
 ```
 
 Knit the doc and save it on GitHub.
@@ -131,6 +152,23 @@ Knit the doc and save it on GitHub.
 For each state, identify what is the station that is closest to the mid-point of the state. Combining these with the stations you identified in the previous question, use `leaflet()` to visualize all \~100 points in the same figure, applying different colors for those identified in this question.
 
 ```{r}
+mid_point <- met[, .(lon_50 = quantile(lon, probs=.5, na.rm = T),
+                     lat_50 = quantile(lat, probs = .5, na.rm = T)),
+                 by = STATE]
+mid <- merge(x = met, y=mid_point, by = "STATE")
+
+# Find euclidian distance
+mid[, mid_eudist := sqrt((lon -lon_50)^2 + (lat - lat_50)^2)]
+mid_station <- mid[, .SD[which.min(mid_eudist)],
+                   by = STATE]
+
+library(leaflet)
+library(dbplyr)
+leaflet() %>%
+  addProviderTiles('CartoDB.Positron') %>%
+  addCircles(data = mid_station,
+             lat = ~lat, lng = ~lon, popup = "mid station",
+             opacity=1, fillOpacity = 1, radius = 400, color = "blue")
 ```
 
 Knit the doc and save it on GitHub.
@@ -146,6 +184,10 @@ Start by computing the states' average temperature. Use that measurement to clas
 -   High: temp \>= 25
 
 ```{r}
+met[, state_temperature := mean(temp, na.rm=T), by = STATE]
+met[, temp_cat := fifelse(state_temperature < 20, "low_temp",
+                          fifelse(state_temperature < 25, "mid-temp",
+                                  "high-temp"))]
 ```
 
 Once you are done with that, you can compute the following:
@@ -159,6 +201,19 @@ Once you are done with that, you can compute the following:
 For each of the temperature levels described before.
 
 ```{r}
+table(met$temp_cat, useNA = "always")
+
+tab <- met[, .(
+  N_entries = .N,
+  N_entries_na = sum(is.na(temp_cat)),
+  N_stations = length(unique(USAFID)),
+  N_states = length(unique(STATE)),
+  mean_temp = mean(temp, na.rm=T),
+  mean_wind.sp = mean(wind.sp, na.rm = T),
+  mean_atm.press = mean(atm.press, na.rm = T)
+), by = temp_cat]
+
+knitr::kable(tab, caotuib = "Cool info found here")
 ```
 
 Knit the document, commit your changes, and push them to GitHub.
@@ -172,6 +227,25 @@ Let's practice running regression models with smooth functions on X. We need the
 -   fit both a linear model and a spline model (use `gam()` with a cubic regression spline on wind speed). Summarize and plot the results from the models and interpret which model is the best fit and why.
 
 ```{r}
+
+station_avg[, temp_50 := quantile(temp, probs=.5, na.rm = T), by = STATE]
+station_avg[, wind.sp_50 := quantile(wind.sp, probs=.5, na.rm = T), by = STATE]
+
+library(ggplot2)
+ggplot(station_avg, aes(x=wind.sp_50, y=temp_50 )) + 
+  geom_point() +
+  geom_smooth(method = "lm") +
+  geom_smooth(method = "gam", col = 2)
+
+library(mgcv)
+
+lm_mod <- lm(temp_50~ wind.sp_50, data = station_avg)
+summary(lm_mod)
+plot(lm_mod)
+
+gam_mod <- gam(temp_50~ s(wind.sp_50, bs = "cr", k=20), data = station_avg)
+summary(gam_mod)
+
 ```
 
 # Delivarables
@@ -179,5 +253,6 @@ Let's practice running regression models with smooth functions on X. We need the
 -   Answer questions 1-5
 
 -   Paste the link to the github repo you created here
+https://github.com/Mark-of-JP/JSC370-labs
 
 -   Submit pdf or html output to Quercus

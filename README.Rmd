@@ -227,6 +227,25 @@ Let's practice running regression models with smooth functions on X. We need the
 -   fit both a linear model and a spline model (use `gam()` with a cubic regression spline on wind speed). Summarize and plot the results from the models and interpret which model is the best fit and why.
 
 ```{r}
+
+station_avg[, temp_50 := quantile(temp, probs=.5, na.rm = T), by = STATE]
+station_avg[, wind.sp_50 := quantile(wind.sp, probs=.5, na.rm = T), by = STATE]
+
+library(ggplot2)
+ggplot(station_avg, aes(x=wind.sp_50, y=temp_50 )) + 
+  geom_point() +
+  geom_smooth(method = "lm") +
+  geom_smooth(method = "gam", col = 2)
+
+library(mgcv)
+
+lm_mod <- lm(temp_50~ wind.sp_50, data = station_avg)
+summary(lm_mod)
+plot(lm_mod)
+
+gam_mod <- gam(temp_50~ s(wind.sp_50, bs = "cr", k=20), data = station_avg)
+summary(gam_mod)
+
 ```
 
 # Delivarables
@@ -234,5 +253,6 @@ Let's practice running regression models with smooth functions on X. We need the
 -   Answer questions 1-5
 
 -   Paste the link to the github repo you created here
+https://github.com/Mark-of-JP/JSC370-labs
 
 -   Submit pdf or html output to Quercus
