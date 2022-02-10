@@ -79,6 +79,11 @@ Once you are done setting up the project, you can now start working with the MET
 
 1.  Load the `data.table` (and the `dtplyr` and `dplyr` packages if you plan to work with those).
 
+```{r setup, message=FALSE}
+library(tidyverse)
+```
+
+
 2.  Load the met data from <https://github.com/JSC370/jsc370-2022/blob/main/labs/lab03/met_all.gz>, and also the station data. For the latter, you can use the code we used during lecture to pre-process the stations data:
 
 ```{r stations-data, eval = FALSE}
@@ -100,6 +105,8 @@ stations <- stations[n == 1,][, n := NULL]
 ```
 
 3.  Merge the data as we did during the lecture.
+
+
 
 ## Question 1: Representative station for the US
 
